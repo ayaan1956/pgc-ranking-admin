@@ -1,46 +1,70 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import supabase from '../lib/supabase';
 
 export default function Login() {
-  const navigate = useNavigate();
-  const { login, role, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const handleSubmit = async (e: FormEvent) => {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError("");
     setLoading(true);
 
-    const result = await login(email, password);
-    setLoading(false);
+    try {
+      // Step 1: Sign in with email/password
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (result.error) {
-      setError(result.error);
-      return;
+      if (signInError) {
+        setError("Invalid login credentials: " + signInError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!signInData?.user) {
+        setError("Login failed - no user returned");
+        setLoading(false);
+        return;
+      }
+
+      console.log("Login successful. User ID:", signInData.user.id);
+
+      // Step 2: Check if user is in admin_users table
+      const { data: adminData, error: adminError } = await supabase
+        .from("admin_users")
+        .select("user_id, name")
+        .eq("user_id", signInData.user.id)
+        .maybeSingle();
+
+      console.log("Admin check result:", adminData, "Error:", adminError);
+
+      if (adminError) {
+        setError("Admin check error: " + adminError.message);
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      if (!adminData) {
+        setError("Not authorized - your account is not registered as admin");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // Step 3: User IS admin - redirect to admin panel
+      console.log("Admin confirmed. Redirecting...");
+      window.location.href = "/admin";
+    } catch (err: any) {
+      setError("Unexpected error: " + err.message);
+      setLoading(false);
     }
-
-    if (role === 'admin') {
-      setSuccess('Welcome, Admin!');
-      navigate('/admin', { replace: true });
-    } else if (role === 'teacher') {
-      setSuccess('Welcome back!');
-      navigate('/teacher', { replace: true });
-    }
-  };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-[#0F7A3D]" />
-      </div>
-    );
   }
 
   return (
@@ -68,14 +92,14 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@punjabcolleges.edu.pk"
+              placeholder="aya an19562@gmail.com"
               required
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0F7A3D] focus:border-[#0F7A3D] outline-none transition"
             />
